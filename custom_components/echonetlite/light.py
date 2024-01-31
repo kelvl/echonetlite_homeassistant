@@ -1,6 +1,7 @@
 import logging
 
 from pychonet.GeneralLighting import ENL_STATUS, ENL_BRIGHTNESS, ENL_COLOR_TEMP
+from pychonet.CeilingFan import ENL_LIGHT_POWER, ENL_LIGHT_BRIGHTNESS, ENL_LIGHT_TEMPERATURE, ENL_LIGHT_NIGHT_MODE, ENL_LIGHT_NIGHT_BRIGHTNESS
 
 from pychonet.lib.eojx import EOJX_CLASS
 
@@ -8,9 +9,13 @@ from homeassistant.components.light import LightEntity, ColorMode, LightEntityFe
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP,
+    ATTR_COLOR_TEMP_KELVIN,
     COLOR_MODE_BRIGHTNESS,
     COLOR_MODE_COLOR_TEMP,
 )
+
+from homeassistant.util.color import brightness_to_value, value_to_brightness
+from homeassistant.util.percentage import ranged_value_to_percentage, percentage_to_ranged_value
 
 from .const import DOMAIN, CONF_FORCE_POLLING
 
@@ -37,8 +42,221 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
                     entity["echonetlite"],
                 )
             )
+        if eojgc == 0x01 and eojcc in (0x35, 0x3A):
+            # Fan light
+            _LOGGER.debug("Configuring ECHONETlite FanLight entity")
+            entities.append(
+                EchonetFanLight(
+                    entity["echonetlite"]._name or config_entry.title,
+                    entity["echonetlite"],
+                )
+            )
     _LOGGER.debug(f"Number of light devices to be added: {len(entities)}")
     async_add_devices(entities, True)
+
+class EchonetFanLight(LightEntity):
+
+    """Representation of a ECHONET light device."""
+
+    def __init__(self, name, connector):
+        """Initialize the climate device."""
+        self._name = name
+        self._connector = connector  # new line
+        self._uid = (
+            self._connector._uidi if self._connector._uidi else self._connector._uid
+        )
+        self._support_flags = LightEntityFeature(0)
+        self._supported_color_modes = set()
+        self._supports_color = False
+        self._supports_rgbw = False
+        self._supports_color_temp = False
+        self._server_state = self._connector._api._state[
+            self._connector._instance._host
+        ]
+        self._hs_color: tuple[float, float] | None = None
+        self._rgbw_color: tuple[int, int, int, int] | None = None
+        self._color_mode: str | None = None
+        self._color_temp: int | None = None
+        if ENL_LIGHT_BRIGHTNESS in list(self._connector._setPropertyMap):
+            self._supported_color_modes.add(ColorMode.BRIGHTNESS)
+        if ENL_LIGHT_TEMPERATURE in list(self._connector._setPropertyMap):
+            self._supported_color_modes.add(ColorMode.COLOR_TEMP)
+        self._olddata = {}
+        self._should_poll = True
+        self._available = True
+        self.update_option_listener()
+
+    async def async_update(self):
+        """Get the latest state from the Light."""
+        try:
+            await self._connector.async_update()
+        except TimeoutError:
+            pass
+
+    @property
+    def supported_features(self):
+        """Return the list of supported features."""
+        return self._support_flags
+
+    @property
+    def unique_id(self):
+        """Return a unique ID."""
+        return self._uid
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {
+                (
+                    DOMAIN,
+                    self._connector._uid,
+                    self._connector._instance._eojgc,
+                    self._connector._instance._eojcc,
+                    self._connector._instance._eojci,
+                )
+            },
+            "name": self._name,
+            "manufacturer": self._connector._manufacturer,
+            "model": EOJX_CLASS[self._connector._instance._eojgc][
+                self._connector._instance._eojcc
+            ]
+            # "sw_version": "",
+        }
+
+    @property
+    def should_poll(self):
+        """Return the polling state."""
+        return self._should_poll
+
+    @property
+    def name(self):
+        """Return the name of the light device."""
+        return self._name
+
+    @property
+    def available(self) -> bool:
+        """Return true if the device is available."""
+        self._available = (
+            self._server_state["available"]
+            if "available" in self._server_state
+            else True
+        )
+        return self._available
+
+    @property
+    def is_on(self):
+        """Return true if the device is on."""
+        return True if self._connector._update_data[ENL_LIGHT_POWER] == True else False
+
+    async def async_turn_on(self, **kwargs):
+        """Turn on."""
+        await self._connector._instance.setLightStatus(True)
+
+        if (
+            ATTR_BRIGHTNESS in kwargs
+            and ColorMode.BRIGHTNESS in self._supported_color_modes
+        ):
+            
+            
+            brightness = kwargs[ATTR_BRIGHTNESS]
+            device_brightness = brightness_to_value((1, 100), brightness)
+
+            # send the message to the lamp
+            await self._connector._instance.setLightBrightness(device_brightness)
+            self._attr_brightness = kwargs[ATTR_BRIGHTNESS]
+
+        if (
+            ATTR_COLOR_TEMP_KELVIN in kwargs
+            and ColorMode.COLOR_TEMP in self._supported_color_modes
+        ):
+            
+            kelvin_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            _LOGGER.debug(f"HA requested temp in kelvin : {kelvin_temp}")
+            
+            device_temp = ranged_value_to_percentage((self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
+
+            _LOGGER.debug(f"New color temp of light: {device_temp}")
+            await self._connector._instance.setColorTemperature(device_temp)
+            self._attr_color_temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+
+    async def async_turn_off(self):
+        """Turn off."""
+        await self._connector._instance.setLightStatus(False)
+
+    @property
+    def brightness(self):
+        _LOGGER.debug(
+            f"Current brightness of light: {self._connector._update_data[ENL_LIGHT_BRIGHTNESS]}"
+        )
+
+        device_brightness = self._connector._update_data[ENL_LIGHT_BRIGHTNESS]
+        
+        if device_brightness >= 0:
+            self._attr_brightness = value_to_brightness((1, 100), device_brightness)
+        else:
+            self._attr_brightness = 128
+        return self._attr_brightness
+
+    @property
+    def color_temp(self):
+        """Return the color temperature in mired."""
+        _LOGGER.debug(
+            f"Current color temp of light: {self._connector._update_data[ENL_LIGHT_TEMPERATURE]}"
+        )
+
+        kelvin_temp = (
+            self._connector._update_data[ENL_LIGHT_TEMPERATURE]
+            if ENL_LIGHT_TEMPERATURE in self._connector._update_data
+            else 0
+        )
+
+        self._attr_color_temp_kelvin = percentage_to_ranged_value((self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
+
+        return self._attr_color_temp
+
+    @property
+    def color_mode(self) -> str:
+        """Return the color mode of the light."""
+        return self._color_mode
+
+    @property
+    def supported_color_modes(self) -> set:
+        """Flag supported features."""
+        return self._supported_color_modes
+
+    async def async_added_to_hass(self):
+        """Register callbacks."""
+        self._connector.add_update_option_listener(self.update_option_listener)
+        self._connector.register_async_update_callbacks(self.async_update_callback)
+
+    async def async_update_callback(self, isPush=False):
+        changed = (
+            self._olddata != self._connector._update_data
+            or self._available != self._server_state["available"]
+        )
+        if changed:
+            self._olddata = self._connector._update_data.copy()
+            self.async_schedule_update_ha_state()
+            if isPush and self._should_poll:
+                try:
+                    await self._connector.async_update()
+                except TimeoutError:
+                    pass
+
+    def update_option_listener(self):
+        self._should_poll = (
+            self._connector._user_options.get(CONF_FORCE_POLLING, False)
+            or ENL_LIGHT_POWER not in self._connector._ntfPropertyMap
+            or (
+                COLOR_MODE_BRIGHTNESS in self._supported_color_modes
+                and ENL_LIGHT_BRIGHTNESS not in self._connector._ntfPropertyMap
+            )
+            or (
+                COLOR_MODE_COLOR_TEMP in self._supported_color_modes
+                and ENL_LIGHT_TEMPERATURE not in self._connector._ntfPropertyMap
+            )
+        )
+        _LOGGER.info(f"{self._name}: _should_poll is {self._should_poll}")
 
 
 class EchonetLight(LightEntity):
