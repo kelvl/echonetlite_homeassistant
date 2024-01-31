@@ -149,9 +149,9 @@ class EchonetFanLight(LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on."""
-        brightness = kwargs[ATTR_BRIGHTNESS]
+        brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness)
         device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
-        kelvin_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
+        kelvin_temp = kwargs.get(ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp)
         _LOGGER.debug(f"HA requested brightness: {brightness} kelvin_temp: {kelvin_temp}")            
         device_temp = scale_ranged_value_to_int_range((self.min_color_temp_kelvin, self.max_color_temp_kelvin), (0, 100), kelvin_temp)
 
@@ -177,7 +177,7 @@ class EchonetFanLight(LightEntity):
         return self._attr_brightness
 
     @property
-    def color_temp(self):
+    def color_temp_kelvin(self):
         """Return the color temperature in mired."""
         _LOGGER.debug(
             f"Current color temp of light: {self._connector._update_data[ENL_LIGHT_TEMPERATURE]}"
