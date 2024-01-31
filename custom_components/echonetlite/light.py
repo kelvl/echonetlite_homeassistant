@@ -149,9 +149,9 @@ class EchonetFanLight(LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on."""
-        brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness)
+        brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness)
         device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
-        temp = kwargs.get(ATTR_COLOR_TEMP, self._attr_color_temp)
+        temp = kwargs.get(ATTR_COLOR_TEMP, self.color_temp)
         _LOGGER.debug(f"HA requested brightness: {brightness} temp: {temp}")            
         device_temp = scale_ranged_value_to_int_range((self.min_mireds, self.max_mireds), (0, 100), temp)
 
