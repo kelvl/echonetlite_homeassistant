@@ -151,9 +151,9 @@ class EchonetFanLight(LightEntity):
         """Turn on."""
         brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness)
         device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
-        kelvin_temp = kwargs.get(ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp_kelvin)
-        _LOGGER.debug(f"HA requested brightness: {brightness} kelvin_temp: {kelvin_temp}")            
-        device_temp = scale_ranged_value_to_int_range((self.min_color_temp_kelvin, self.max_color_temp_kelvin), (0, 100), kelvin_temp)
+        temp = kwargs.get(ATTR_COLOR_TEMP, self._attr_color_temp)
+        _LOGGER.debug(f"HA requested brightness: {brightness} temp: {temp}")            
+        device_temp = scale_ranged_value_to_int_range((self.min_mireds, self.max_mireds), (0, 100), temp)
 
         _LOGGER.debug(f"Setting device brightness: {device_brightness} device temp: {device_temp}")            
         await self._connector._instance.setLightMode(device_brightness, device_temp)
@@ -177,21 +177,21 @@ class EchonetFanLight(LightEntity):
         return self._attr_brightness
 
     @property
-    def color_temp_kelvin(self):
+    def color_temp(self):
         """Return the color temperature in mired."""
         _LOGGER.debug(
             f"Current color temp of light: {self._connector._update_data[ENL_LIGHT_TEMPERATURE]}"
         )
 
-        kelvin_temp = (
+        temp = (
             self._connector._update_data[ENL_LIGHT_TEMPERATURE]
             if ENL_LIGHT_TEMPERATURE in self._connector._update_data
             else 0
         )
 
-        self._attr_color_temp_kelvin = scale_ranged_value_to_int_range((0, 100), (self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
+        self._attr_color_temp = scale_ranged_value_to_int_range((0, 100), (self.min_mireds, self.max_mireds), temp)
 
-        return self._attr_color_temp_kelvin
+        return self._attr_color_temp
 
     @property
     def color_mode(self) -> str:
