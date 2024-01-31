@@ -151,7 +151,7 @@ class EchonetFanLight(LightEntity):
         """Turn on."""
         brightness = kwargs.get(ATTR_BRIGHTNESS, self._attr_brightness)
         device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
-        kelvin_temp = kwargs.get(ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp)
+        kelvin_temp = kwargs.get(ATTR_COLOR_TEMP_KELVIN, self._attr_color_temp_kelvin)
         _LOGGER.debug(f"HA requested brightness: {brightness} kelvin_temp: {kelvin_temp}")            
         device_temp = scale_ranged_value_to_int_range((self.min_color_temp_kelvin, self.max_color_temp_kelvin), (0, 100), kelvin_temp)
 
@@ -191,7 +191,7 @@ class EchonetFanLight(LightEntity):
 
         self._attr_color_temp_kelvin = scale_ranged_value_to_int_range((0, 100), (self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
 
-        return self._attr_color_temp
+        return self._attr_color_temp_kelvin
 
     @property
     def color_mode(self) -> str:
