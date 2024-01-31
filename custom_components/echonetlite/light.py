@@ -14,8 +14,7 @@ from homeassistant.components.light import (
     COLOR_MODE_COLOR_TEMP,
 )
 
-from homeassistant.util.color import brightness_to_value, value_to_brightness
-from homeassistant.util.percentage import ranged_value_to_percentage, percentage_to_ranged_value
+from homeassistant.util.scaling import scale_ranged_value_to_int_range
 
 from .const import DOMAIN, CONF_FORCE_POLLING
 
@@ -159,7 +158,7 @@ class EchonetFanLight(LightEntity):
             
             
             brightness = kwargs[ATTR_BRIGHTNESS]
-            device_brightness = brightness_to_value((1, 100), brightness)
+            device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
 
             # send the message to the lamp
             await self._connector._instance.setLightBrightness(device_brightness)
@@ -173,7 +172,7 @@ class EchonetFanLight(LightEntity):
             kelvin_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
             _LOGGER.debug(f"HA requested temp in kelvin : {kelvin_temp}")
             
-            device_temp = ranged_value_to_percentage((self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
+            device_temp = scale_ranged_value_to_int_range((self.min_color_temp_kelvin, self.max_color_temp_kelvin), (0, 100), kelvin_temp)
 
             _LOGGER.debug(f"New color temp of light: {device_temp}")
             await self._connector._instance.setColorTemperature(device_temp)
@@ -192,7 +191,7 @@ class EchonetFanLight(LightEntity):
         device_brightness = self._connector._update_data[ENL_LIGHT_BRIGHTNESS]
         
         if device_brightness >= 0:
-            self._attr_brightness = value_to_brightness((1, 100), device_brightness)
+            self._attr_brightness = scale_ranged_value_to_int_range((1, 100), (1, 255), device_brightness)
         else:
             self._attr_brightness = 128
         return self._attr_brightness
@@ -210,7 +209,7 @@ class EchonetFanLight(LightEntity):
             else 0
         )
 
-        self._attr_color_temp_kelvin = percentage_to_ranged_value((self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
+        self._attr_color_temp_kelvin = scale_ranged_value_to_int_range((0, 100), (self.min_color_temp_kelvin, self.max_color_temp_kelvin), kelvin_temp)
 
         return self._attr_color_temp
 
