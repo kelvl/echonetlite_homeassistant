@@ -149,34 +149,14 @@ class EchonetFanLight(LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on."""
-        await self._connector._instance.setLightStatus(True)
+        brightness = kwargs[ATTR_BRIGHTNESS]
+        device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
+        kelvin_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
+        _LOGGER.debug(f"HA requested brightness: {brightness} kelvin_temp: {kelvin_temp}")            
+        device_temp = scale_ranged_value_to_int_range((self.min_color_temp_kelvin, self.max_color_temp_kelvin), (0, 100), kelvin_temp)
 
-        if (
-            ATTR_BRIGHTNESS in kwargs
-            and ColorMode.BRIGHTNESS in self._supported_color_modes
-        ):
-            
-            
-            brightness = kwargs[ATTR_BRIGHTNESS]
-            device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
-
-            # send the message to the lamp
-            await self._connector._instance.setLightBrightness(device_brightness)
-            self._attr_brightness = kwargs[ATTR_BRIGHTNESS]
-
-        if (
-            ATTR_COLOR_TEMP_KELVIN in kwargs
-            and ColorMode.COLOR_TEMP in self._supported_color_modes
-        ):
-            
-            kelvin_temp = kwargs[ATTR_COLOR_TEMP_KELVIN]
-            _LOGGER.debug(f"HA requested temp in kelvin : {kelvin_temp}")
-            
-            device_temp = scale_ranged_value_to_int_range((self.min_color_temp_kelvin, self.max_color_temp_kelvin), (0, 100), kelvin_temp)
-
-            _LOGGER.debug(f"New color temp of light: {device_temp}")
-            await self._connector._instance.setColorTemperature(device_temp)
-            self._attr_color_temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+        _LOGGER.debug(f"Setting device brightness: {device_brightness} device temp: {device_temp}")            
+        await self._connector._instance.setLightMode(device_brightness, device_temp)
 
     async def async_turn_off(self):
         """Turn off."""
