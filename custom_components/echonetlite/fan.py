@@ -3,7 +3,6 @@ import logging
 from pychonet.EchonetInstance import ENL_STATUS
 from pychonet.lib.eojx import EOJX_CLASS
 from homeassistant.components.fan import FanEntity, FanEntityFeature
-from homeassistant.components.light import LightEntity, LightEntityFeature
 from homeassistant.const import PRECISION_WHOLE
 from .const import DOMAIN, CONF_FORCE_POLLING
 
@@ -39,7 +38,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     async_add_devices(entities, True)
 
 
-class EchonetFan(FanEntity, LightEntity):
+class EchonetFan(FanEntity):
     """Representation of an ECHONETLite Fan device (eg Air purifier)."""
 
     def __init__(self, name, connector):
