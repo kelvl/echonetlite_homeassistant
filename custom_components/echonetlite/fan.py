@@ -1,10 +1,10 @@
 import logging
 
-from pychonet.EchonetInstance import ENL_GETMAP
+from pychonet.EchonetInstance import ENL_STATUS
 from pychonet.lib.eojx import EOJX_CLASS
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.const import (
-    PRECISION_WHOLE,
+    PRECISION_WHOLE, CONF_FORCE_POLLING
 )
 from .const import DOMAIN
 
@@ -35,6 +35,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
         if entity["instance"]["eojgc"] == 0x01 and (
             entity["instance"]["eojcc"] == 0x35 or entity["instance"]["eojcc"] == 0x3A
         ):  # Home Air Cleaner or Celing Fan
+            _LOGGER.info(f"Adding EchonetFan {config_entry.title}")
             entities.append(EchonetFan(config_entry.title, entity["echonetlite"]))
     async_add_devices(entities, True)
 
@@ -56,6 +57,7 @@ class EchonetFan(FanEntity):
         self._server_state = self._connector._api._state[
             self._connector._instance._host
         ]
+        _LOGGER.info(f"EchonetFan {name} setPropertyMap {list(self._connector._setPropertyMap)}")
         if ENL_FANSPEED in list(self._connector._setPropertyMap):
             self._support_flags = self._support_flags | FanEntityFeature.PRESET_MODE
         if ENL_FANSPEED_PERCENT in list(self._connector._setPropertyMap):
