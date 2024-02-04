@@ -1,17 +1,24 @@
 import logging
 
 from pychonet.GeneralLighting import ENL_STATUS, ENL_BRIGHTNESS, ENL_COLOR_TEMP
-from pychonet.CeilingFan import ENL_LIGHT_POWER, ENL_LIGHT_BRIGHTNESS, ENL_LIGHT_TEMPERATURE, ENL_LIGHT_NIGHT_MODE, ENL_LIGHT_NIGHT_BRIGHTNESS
+from pychonet.CeilingFan import (
+    ENL_LIGHT_POWER,
+    ENL_LIGHT_BRIGHTNESS,
+    ENL_LIGHT_TEMPERATURE,
+    ENL_LIGHT_NIGHT_MODE,
+    ENL_LIGHT_NIGHT_BRIGHTNESS,
+)
 
 from pychonet.lib.eojx import EOJX_CLASS
 
 from homeassistant.components.light import LightEntity, ColorMode, LightEntityFeature
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_EFFECT,
     ATTR_COLOR_TEMP,
-    ATTR_COLOR_TEMP_KELVIN,
     COLOR_MODE_BRIGHTNESS,
     COLOR_MODE_COLOR_TEMP,
+    EFFECT_OFF,
 )
 
 from homeassistant.util.scaling import scale_ranged_value_to_int_range
@@ -53,6 +60,7 @@ async def async_setup_entry(hass, config_entry, async_add_devices):
     _LOGGER.debug(f"Number of light devices to be added: {len(entities)}")
     async_add_devices(entities, True)
 
+
 class EchonetFanLight(LightEntity):
 
     """Representation of a ECHONET light device."""
@@ -76,10 +84,16 @@ class EchonetFanLight(LightEntity):
         self._rgbw_color: tuple[int, int, int, int] | None = None
         self._color_mode: str | None = None
         self._color_temp: int | None = None
+
+        if ENL_LIGHT_NIGHT_MODE in list(self._connector._setPropertyMap):
+            self._supports_night_mode = True
+            self._support_flags |= LightEntityFeature.EFFECT
+
         if ENL_LIGHT_BRIGHTNESS in list(self._connector._setPropertyMap):
             self._supported_color_modes.add(ColorMode.BRIGHTNESS)
         if ENL_LIGHT_TEMPERATURE in list(self._connector._setPropertyMap):
             self._supported_color_modes.add(ColorMode.COLOR_TEMP)
+
         self._olddata = {}
         self._should_poll = True
         self._available = True
@@ -118,7 +132,7 @@ class EchonetFanLight(LightEntity):
             "manufacturer": self._connector._manufacturer,
             "model": EOJX_CLASS[self._connector._instance._eojgc][
                 self._connector._instance._eojcc
-            ]
+            ],
             # "sw_version": "",
         }
 
@@ -149,14 +163,42 @@ class EchonetFanLight(LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on."""
-        brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness)
-        device_brightness = scale_ranged_value_to_int_range((1, 255), (1, 100), brightness)
-        temp = kwargs.get(ATTR_COLOR_TEMP, self.color_temp)
-        _LOGGER.debug(f"HA requested brightness: {brightness} temp: {temp}")            
-        device_temp = scale_ranged_value_to_int_range((self.min_mireds, self.max_mireds), (0, 100), temp)
+        if (
+            self._supports_night_mode
+            and (kwargs.get(ATTR_EFFECT) == "night" or self.effect == "night")
+            and kwargs.get(ATTR_EFFECT) != "off"
+        ):
+            # default to lowest brightness when going into night mode
+            brightness = kwargs.get(ATTR_BRIGHTNESS, 1)
+            night_brightness = (
+                "low" if brightness < 85 else "medium" if brightness < 170 else "high"
+            )
+            await self._connector._instance.setNightLightBrightness(night_brightness)
+            self.brightness
+            return
 
-        _LOGGER.debug(f"Setting device brightness: {device_brightness} device temp: {device_temp}")            
+        brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness)
+        device_brightness = scale_ranged_value_to_int_range(
+            (1, 255), (1, 100), brightness
+        )
+
+        temp = kwargs.get(ATTR_COLOR_TEMP, self.color_temp)
+        temp = temp or self.max_mireds
+        _LOGGER.debug(f"HA requested brightness: {brightness} temp: {temp}")
+        device_temp = max(
+            0,
+            scale_ranged_value_to_int_range(
+                (self.max_mireds, self.min_mireds), (1, 100), temp
+            ),
+        )
+
+        _LOGGER.debug(
+            f"Setting device brightness: {device_brightness} device temp: {device_temp}"
+        )
+
         await self._connector._instance.setLightMode(device_brightness, device_temp)
+        self.brightness
+        self.color_temp
 
     async def async_turn_off(self):
         """Turn off."""
@@ -164,14 +206,21 @@ class EchonetFanLight(LightEntity):
 
     @property
     def brightness(self):
+        if self._supports_night_mode and self.effect == "night":
+            night_brightness = self._connector._update_data[ENL_LIGHT_NIGHT_BRIGHTNESS]
+            brightness = {"low": 1, "medium": 128, "high": 255}[night_brightness]
+            return brightness
+
         _LOGGER.debug(
             f"Current brightness of light: {self._connector._update_data[ENL_LIGHT_BRIGHTNESS]}"
         )
 
         device_brightness = self._connector._update_data[ENL_LIGHT_BRIGHTNESS]
-        
+
         if device_brightness >= 0:
-            self._attr_brightness = scale_ranged_value_to_int_range((1, 100), (1, 255), device_brightness)
+            self._attr_brightness = scale_ranged_value_to_int_range(
+                (1, 100), (1, 255), device_brightness
+            )
         else:
             self._attr_brightness = 128
         return self._attr_brightness
@@ -189,9 +238,27 @@ class EchonetFanLight(LightEntity):
             else 0
         )
 
-        self._attr_color_temp = scale_ranged_value_to_int_range((0, 100), (self.min_mireds, self.max_mireds), temp)
+        self._attr_color_temp = scale_ranged_value_to_int_range(
+            (0, 100), (self.max_mireds, self.min_mireds), temp
+        )
 
         return self._attr_color_temp
+
+    @property
+    def effect(self) -> str | None:
+        if not self._supports_night_mode:
+            return None
+        night_mode = self._connector._update_data.get(ENL_LIGHT_NIGHT_MODE)
+        if night_mode is False:
+            return EFFECT_OFF
+        elif night_mode is True:
+            return "night"
+
+    @property
+    def effect_list(self) -> list[str] | None:
+        if not self._supports_night_mode:
+            return None
+        return ["night", EFFECT_OFF]
 
     @property
     def color_mode(self) -> str:
@@ -314,7 +381,7 @@ class EchonetLight(LightEntity):
             "manufacturer": self._connector._manufacturer,
             "model": EOJX_CLASS[self._connector._instance._eojgc][
                 self._connector._instance._eojcc
-            ]
+            ],
             # "sw_version": "",
         }
 
