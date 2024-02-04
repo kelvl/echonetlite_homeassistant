@@ -18,7 +18,6 @@ from homeassistant.components.light import (
     ATTR_COLOR_TEMP,
     COLOR_MODE_BRIGHTNESS,
     COLOR_MODE_COLOR_TEMP,
-    EFFECT_OFF,
 )
 
 from homeassistant.util.scaling import scale_ranged_value_to_int_range
@@ -250,7 +249,7 @@ class EchonetFanLight(LightEntity):
             return None
         night_mode = self._connector._update_data.get(ENL_LIGHT_NIGHT_MODE)
         if night_mode is False:
-            return EFFECT_OFF
+            return "off"
         elif night_mode is True:
             return "night"
 
@@ -258,7 +257,7 @@ class EchonetFanLight(LightEntity):
     def effect_list(self) -> list[str] | None:
         if not self._supports_night_mode:
             return None
-        return ["night", EFFECT_OFF]
+        return ["night", "off"]
 
     @property
     def color_mode(self) -> str:
